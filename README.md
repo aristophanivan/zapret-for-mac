@@ -17,6 +17,26 @@ All 21 upstream strategies are here, converted automatically from the original `
 
 ## Quick start / Быстрый старт
 
+### Homebrew
+
+```bash
+brew tap naladwepo/zapret
+brew install --cask zapret-for-mac
+
+sudo zapret-probe                # what does this machine support? (reverts itself)
+sudo /opt/homebrew/libexec/zapretd install-daemon \
+  --plist /Library/LaunchDaemons/io.zapretmac.zapretd.plist \
+  --data /opt/homebrew/var/zapret-mac
+
+sudo zaprctl vpn stop            # a full-tunnel VPN makes desync pointless
+sudo zaprctl start --transport divert
+zaprctl autopick && zaprctl test
+```
+
+> **Через Homebrew.** `brew tap naladwepo/zapret` и `brew install --cask zapret-for-mac` ставят готовые arm64-бинарники и данные (стратегии, списки, fake-пейлоады) — компилятор не нужен. Дальше: `sudo zapret-probe` выясняет, что умеет ваша машина, и откатывает всё за собой; команда `install-daemon` регистрирует демон в launchd; `sudo zaprctl vpn stop` выключает полнотуннельный VPN, при котором обход бессмыслен; `autopick` перебирает стратегии и оставляет рабочую.
+
+### From source / Из исходников
+
 ```bash
 git clone https://github.com/naladwepo/zapret-for-mac.git
 cd zapret-for-mac
