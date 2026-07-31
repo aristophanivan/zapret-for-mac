@@ -1,0 +1,15 @@
+# Build output
+/bin/
+/dist/
+*.test
+
+# Runtime state written by the daemon when running from a checkout
+/state/
+
+# Upstream artefacts fetched by cmd/batconv at conversion time.
+# They are not ours to redistribute and are re-downloadable on demand:
+#   ./bin/batconv --in .upstream/bat --out strategies
+/.upstream/
+
+# macOS
+.DS_Store
