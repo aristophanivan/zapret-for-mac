@@ -23,3 +23,13 @@ func TestLogDropRules(t *testing.T) {
 		}
 	}
 }
+
+func TestLogDropRulesPhysicalUplinkOnly(t *testing.T) {
+	r := LogDropRules(LogDropOpts{PFLog: "pflog9", Iface: "en0", TCPPorts: []PortRange{{443, 443}}, ExcludeTable: "zmx", ExemptRoot: true})
+	if !strings.Contains(r, "block out on en0 log") {
+		t.Fatalf("missing physical-uplink restriction:\n%s", r)
+	}
+	if strings.Contains(r, "block out log (all") {
+		t.Fatalf("rule still matches every outbound interface:\n%s", r)
+	}
+}

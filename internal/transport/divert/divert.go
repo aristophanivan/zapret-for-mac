@@ -668,6 +668,7 @@ func (t *Transport) steerRules() (string, error) {
 
 	o := netcfg.LogDropOpts{
 		PFLog:        plog.Name(),
+		Iface:        t.route.Iface,
 		TCPPorts:     portRanges(strat.WindowTCP),
 		UDPPorts:     portRanges(strat.WindowUDP),
 		ExcludeTable: t.opts.ExcludeTable,

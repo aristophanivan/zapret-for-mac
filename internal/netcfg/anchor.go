@@ -546,7 +546,12 @@ func SteerRules(o SteerOpts) string {
 // original packet to a dedicated pflog interface and then blocks it; userspace
 // re-emits either the original or a desynchronised packet through BPF.
 type LogDropOpts struct {
-	PFLog        string
+	PFLog string
+	// Iface limits interception to the physical uplink. This is essential
+	// beside a split-routing VPN: traffic already routed into utun must remain
+	// in the VPN, while Direct traffic leaving en0 is the only traffic zapret
+	// should block and re-emit.
+	Iface        string
 	TCPPorts     []PortRange
 	UDPPorts     []PortRange
 	ExcludeTable string
@@ -576,12 +581,22 @@ func LogDropRules(o LogDropOpts) string {
 		user = " user { > root }"
 	}
 	if pl := FormatPorts(o.TCPPorts); pl != "" {
-		b.linef("block out log (all, to %s) quick %s proto tcp from any to %s port %s%s no state",
-			o.PFLog, af, dst, pl, user)
+		if o.Iface != "" {
+			b.linef("block out on %s log (all, to %s) quick %s proto tcp from any to %s port %s%s no state",
+				o.Iface, o.PFLog, af, dst, pl, user)
+		} else {
+			b.linef("block out log (all, to %s) quick %s proto tcp from any to %s port %s%s no state",
+				o.PFLog, af, dst, pl, user)
+		}
 	}
 	if pl := FormatPorts(o.UDPPorts); pl != "" {
-		b.linef("block out log (all, to %s) quick %s proto udp from any to %s port %s%s no state",
-			o.PFLog, af, dst, pl, user)
+		if o.Iface != "" {
+			b.linef("block out on %s log (all, to %s) quick %s proto udp from any to %s port %s%s no state",
+				o.Iface, o.PFLog, af, dst, pl, user)
+		} else {
+			b.linef("block out log (all, to %s) quick %s proto udp from any to %s port %s%s no state",
+				o.PFLog, af, dst, pl, user)
+		}
 	}
 	return b.String()
 }
