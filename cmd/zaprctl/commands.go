@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -2780,6 +2782,123 @@ func (c *cli) cmdRouter(ctx context.Context, args []string) int {
 	return exitOK
 }
 
+const happAgentLabel = "io.zapretmac.happ-agent"
+
+func (c *cli) cmdAutostart(ctx context.Context, args []string) int {
+	action := "status"
+	if len(args) > 0 {
+		action = args[0]
+	}
+	if len(args) > 1 || (action != "install" && action != "remove" && action != "status") {
+		return c.fail(errors.New("usage: zaprctl autostart install|remove|status"))
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return c.fail(err)
+	}
+	path := filepath.Join(home, "Library", "LaunchAgents", happAgentLabel+".plist")
+	domain := "gui/" + strconv.Itoa(os.Getuid())
+	switch action {
+	case "status":
+		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", domain+"/"+happAgentLabel).CombinedOutput()
+		if err != nil {
+			fmt.Fprintf(c.out, "Happ autostart: disabled (%s)\n", strings.TrimSpace(string(out)))
+			return exitOK
+		}
+		fmt.Fprintln(c.out, "Happ autostart: enabled")
+		return exitOK
+	case "remove":
+		_, _ = exec.CommandContext(ctx, "/bin/launchctl", "bootout", domain+"/"+happAgentLabel).CombinedOutput()
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return c.fail(err)
+		}
+		fmt.Fprintln(c.out, "Happ autostart removed")
+		return exitOK
+	case "install":
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return c.fail(err)
+		}
+		program, err := os.Executable()
+		if err != nil {
+			return c.fail(err)
+		}
+		plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>%s</string>
+<key>ProgramArguments</key><array><string>%s</string><string>happ-agent</string></array>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>%s</string>
+<key>StandardErrorPath</key><string>%s</string>
+</dict></plist>
+`, happAgentLabel, xmlEscape(program), filepath.Join(home, "Library", "Logs", "zapret-happ-agent.log"), filepath.Join(home, "Library", "Logs", "zapret-happ-agent.err.log"))
+		if err := os.WriteFile(path, []byte(plist), 0o600); err != nil {
+			return c.fail(err)
+		}
+		_, _ = exec.CommandContext(ctx, "/bin/launchctl", "bootout", domain+"/"+happAgentLabel).CombinedOutput()
+		if out, err := exec.CommandContext(ctx, "/bin/launchctl", "bootstrap", domain, path).CombinedOutput(); err != nil {
+			return c.fail(fmt.Errorf("bootstrap Happ agent: %s: %w", strings.TrimSpace(string(out)), err))
+		}
+		fmt.Fprintln(c.out, "Happ autostart installed: VPN launch and routing refresh enabled")
+		return exitOK
+	}
+	return exitOK
+}
+
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return strings.ReplaceAll(s, "'", "&apos;")
+}
+
+func (c *cli) cmdHappAgent(ctx context.Context) int {
+	_ = exec.CommandContext(ctx, "/usr/bin/open", "-a", "Happ").Run()
+	var last [32]byte
+	for {
+		profile, err := c.happProfile()
+		if err == nil {
+			body, _ := json.Marshal(profile)
+			h := sha256.Sum256(body)
+			if h != last {
+				if link, lerr := happLink(profile); lerr == nil {
+					_ = exec.CommandContext(ctx, "/usr/bin/open", link).Run()
+					last = h
+				}
+			}
+		}
+		if !happConnected() {
+			startLastHappService(ctx)
+		}
+		select {
+		case <-ctx.Done():
+			return exitOK
+		case <-time.After(10 * time.Second):
+		}
+	}
+}
+
+func startLastHappService(ctx context.Context) {
+	b, err := exec.CommandContext(ctx, "/usr/sbin/scutil", "--nc", "list").Output()
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.Contains(strings.ToLower(line), "happ") {
+			continue
+		}
+		name := strings.TrimSpace(strings.TrimLeft(line, "*+- "))
+		if i := strings.Index(name, ")"); i >= 0 {
+			name = strings.TrimSpace(name[i+1:])
+		}
+		if name != "" {
+			_, _ = exec.CommandContext(ctx, "/usr/sbin/scutil", "--nc", "start", name).CombinedOutput()
+		}
+		return
+	}
+}
+
 // cmdProbe is the single user-facing entry point for the reversible machine
 // capability test. The implementation lives in probe.go so the repository no
 // longer installs a second capability-probe application.
@@ -2855,6 +2974,14 @@ func (c *cli) happProfile() (happRoutingProfile, error) {
 		FakeDNS:        "false",
 		RouteOrder:     "direct-block-proxy",
 	}, nil
+}
+
+func happLink(profile happRoutingProfile) (string, error) {
+	body, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return "happ://routing/onadd/" + base64.StdEncoding.EncodeToString(append(body, '\n')), nil
 }
 
 func readRouteDomains(dir string, names ...string) ([]string, error) {

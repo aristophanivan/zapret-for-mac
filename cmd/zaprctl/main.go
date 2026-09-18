@@ -174,6 +174,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return c.cmdVPN(ctx, sub)
 	case "router":
 		return c.cmdRouter(ctx, sub)
+	case "autostart":
+		return c.cmdAutostart(ctx, sub)
+	case "happ-agent":
+		return c.cmdHappAgent(ctx)
 	case "autopick", "pick":
 		return c.cmdAutopick(ctx, sub)
 	case "logs", "log":
@@ -327,6 +331,7 @@ func commandDocs() []commandDoc {
 		{"ipset [loaded|none|any]", "flowseal's tri-state ipset switch"},
 		{"vpn [status|stop|start]", "VPN holding a tunnel default route: show it, stop it, put it back"},
 		{"router happ [--install] [--output FILE]", "Happ-only split-routing policy; rejects other VPN clients"},
+		{"autostart install|remove|status", "start Happ and refresh its routing profile at login"},
 		{"probe [flags]", "run the reversible PF/BPF capability probe (needs root)"},
 		{"autopick [--suite all|discord] [--rounds N]", "measure every strategy and leave the best one running"},
 		{"logs [-n N] [-f] [--file P]", "tail the daemon log"},
