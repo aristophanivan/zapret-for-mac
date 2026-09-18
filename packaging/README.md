@@ -43,7 +43,7 @@ zaprctl status | grep log
 ```bash
 cd /path/to/zapret-mac
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
-for cmd in zapretd zaprctl zapret-probe; do
+for cmd in zapretd zaprctl; do
   CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
     -ldflags "-s -w -X main.version=$VERSION" -o "bin/$cmd" "./cmd/$cmd/"
 done
@@ -52,7 +52,7 @@ done
 ### 2. Check what this machine can actually do (optional, recommended)
 
 ```bash
-sudo ./bin/zapret-probe
+sudo ./bin/zaprctl probe
 ```
 
 `full-parity-possible` means the packet datapath (`divert`) works here.

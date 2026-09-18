@@ -30,7 +30,7 @@ zaprctl status; echo $?     # 3, пока демон не запущен
 
 ```bash
 make build
-sudo ./bin/zapret-probe
+sudo ./bin/zaprctl probe
 ```
 
 Probe ничего не ломает: не пишет `/etc/pf.conf`, не меняет DNS и маршруты,
@@ -245,7 +245,7 @@ zaprctl status
 | `the datapath is not running: ...` | причина в тексте; дальше `zaprctl logs`, `sudo zaprctl doctor` |
 | `the <transport> datapath cannot honour N op(s) of this strategy: ...` | техники не выполнятся; `zaprctl explain <strategy>` покажет, что именно, и выберите другую стратегию |
 | `running the degraded proxy datapath: fake/rst/seqovl ops ... cannot be honoured` | packet-датапас не поднялся; `sudo zaprctl doctor` скажет почему |
-| `the capability probe could not confirm either datapath: ...` | ни один транспорт не подтверждён; смотрите вывод `sudo ./bin/zapret-probe` |
+| `the capability probe could not confirm either datapath: ...` | ни один транспорт не подтверждён; смотрите вывод `sudo ./bin/zaprctl probe` |
 | `the default route goes through utunN: ...` | активен VPN, раздел 6 |
 | `pf drift: ...` | правила pf изменил кто-то ещё (другой инструмент сделал `pfctl -f /etc/pf.conf`); демон восстановит свой anchor, но проверьте `sudo zaprctl doctor` |
 | `cannot read the ipset list: ...` | файл `lists/ipset-all.txt` недоступен; `sudo zaprctl ipset` покажет состояние |
