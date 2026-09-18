@@ -219,13 +219,13 @@ Full uninstall: `make uninstall` — removes the binaries, both launchd jobs and
 
 ## Known limitations / Известные ограничения
 
-* Traffic from **root-owned** processes is not bypassed — the `user { > root }` rule is the loop breaker for our own injected packets. `tpws` on macOS has the same limitation.
+* Root-owned traffic is intentionally exempt from interception via `user { > root }`. This is the loop breaker for injected packets and lets Happ's own VPN transport reach its server while user-owned Direct connections are processed.
 * Internet Sharing is not supported.
 * A blind full-tunnel VPN makes direct desync impossible because its sockets carry tunnel addresses. With the Happ split-routing profile (`zaprctl router happ --install`), `--allow-vpn` lets zapret process physical Direct connections while foreign traffic remains tunneled.
 * Apple documents pf as "not API" ([TN3165](https://developer.apple.com/documentation/technotes/tn3165-packet-filter-is-not-api)) and there is no arbitration between tools. The daemon watches its anchor for drift and reloads, but a conflict with something else running `pfctl -f /etc/pf.conf` is possible by design.
 * Strategies decay: `seqovl=681` works only while the DPI reassembles naively. `cmd/batconv` re-imports upstream at any time.
 
-> * Трафик процессов, запущенных от **root**, не обходится — правило `user { > root }` разрывает петлю для наших же инжектированных пакетов; ровно то же ограничение у `tpws` на macOS.
+> * Трафик процессов, запущенных от **root**, намеренно исключён из перехвата правилом `user { > root }`. Это разрывает петлю инжекции и позволяет собственному VPN-трафику Happ доходить до сервера, пока пользовательские Direct-соединения обрабатываются zapret.
 > * Internet Sharing не поддерживается.
 > * При слепом полнотуннельном VPN десинхронизация невозможна: сокеты несут адрес туннеля. В split-routing профиле (`zaprctl router happ --install` для Happ) `--allow-vpn` позволяет zapret обрабатывать физические Direct-соединения, а иностранный трафик оставляет в VPN.
 > * Apple документирует pf как «не API» ([TN3165](https://developer.apple.com/documentation/technotes/tn3165-packet-filter-is-not-api)), арбитража между инструментами не существует. Демон следит за дрейфом своего анкора и восстанавливает его, но конфликт с чем-то, что делает `pfctl -f /etc/pf.conf`, возможен принципиально.

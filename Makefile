@@ -75,7 +75,7 @@ install: build
 	sudo install -m 0644 fakes/*.bin "$(DATADIR)/fakes/"
 	sudo install -m 0644 strategies/*.toml "$(DATADIR)/strategies/"
 	sudo $(LIBEXEC)/zapretd install-daemon --plist "$(PLIST)" --data "$(DATADIR)" \
-		--transport divert --allow-vpn --no-exempt-root
+		--transport divert --allow-vpn
 	@for attempt in 1 2 3 4 5; do \
 		sudo $(PREFIX)/bin/zaprctl use cloud-gaming && exit 0; \
 		sleep 1; \
