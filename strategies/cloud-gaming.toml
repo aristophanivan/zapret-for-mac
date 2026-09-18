@@ -17,7 +17,7 @@ name = "p1-udp-443"
 proto = "udp"
 ports = ["443"]
 hostlist = ["list-general.txt", "list-general-user.txt"]
-hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt"]
+hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt", "list-vk.txt"]
 ipset_exclude = ["ipset-exclude.txt", "ipset-exclude-user.txt"]
 
 [[profile.ops]]
@@ -96,7 +96,7 @@ name = "p5-tcp-80_443"
 proto = "tcp"
 ports = ["80", "443"]
 hostlist = ["list-general.txt", "list-general-user.txt"]
-hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt"]
+hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt", "list-vk.txt"]
 ipset_exclude = ["ipset-exclude.txt", "ipset-exclude-user.txt"]
 
 [[profile.ops]]
@@ -121,7 +121,7 @@ name = "p6-udp-443"
 [profile.filter]
 proto = "udp"
 ports = ["443"]
-hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt"]
+hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt", "list-vk.txt"]
 ipset = ["ipset-all.txt"]
 ipset_exclude = ["ipset-exclude.txt", "ipset-exclude-user.txt"]
 
@@ -138,7 +138,7 @@ name = "p7-tcp-80_443_8443"
 [profile.filter]
 proto = "tcp"
 ports = ["80", "443", "8443"]
-hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt"]
+hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt", "list-vk.txt"]
 ipset = ["ipset-all.txt"]
 ipset_exclude = ["ipset-exclude.txt", "ipset-exclude-user.txt"]
 
@@ -165,6 +165,7 @@ cutoff = "n4"
 [profile.filter]
 proto = "tcp"
 ports = ["1024-65535"]
+hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt", "list-vk.txt"]
 ipset = ["ipset-all.txt"]
 ipset_exclude = ["ipset-exclude.txt", "ipset-exclude-user.txt"]
 
@@ -193,6 +194,7 @@ cutoff = "n4"
 [profile.filter]
 proto = "udp"
 ports = ["1024-65535"]
+hostlist_exclude = ["list-exclude.txt", "list-exclude-user.txt", "list-vk.txt"]
 ipset = ["ipset-all.txt"]
 ipset_exclude = ["ipset-exclude.txt", "ipset-exclude-user.txt"]
 
