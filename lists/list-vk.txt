@@ -1,0 +1,12 @@
+# VK / VK Play services that should stay Direct instead of going through Happ.
+vk.com
+vk.ru
+vk.me
+vkvideo.ru
+vkplay.ru
+vkplay.live
+vkuseraudio.net
+vkuservideo.net
+userapi.com
+mycdn.me
+vk-cdn.net

@@ -2943,7 +2943,8 @@ func happInUse() bool {
 
 func (c *cli) happProfile() (happRoutingProfile, error) {
 	domains, err := readRouteDomains(c.findDir("lists"),
-		"list-general.txt", "list-google.txt", "list-general-user.txt")
+		"list-general.txt", "list-google.txt", "list-general-user.txt",
+		"list-exclude.txt", "list-exclude-user.txt", "list-vk.txt")
 	if err != nil {
 		return happRoutingProfile{}, err
 	}
@@ -2952,7 +2953,7 @@ func (c *cli) happProfile() (happRoutingProfile, error) {
 		directSites = append(directSites, "domain:"+domain)
 	}
 	return happRoutingProfile{
-		Name:              "zapret-mac: RU direct + RKN bypass",
+		Name:              "zapret-mac: RU + domestic services direct + RKN bypass",
 		GlobalProxy:       "true",
 		RemoteDNSType:     "DoH",
 		RemoteDNSDomain:   "https://cloudflare-dns.com/dns-query",

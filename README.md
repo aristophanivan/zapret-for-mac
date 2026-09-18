@@ -83,8 +83,9 @@ zaprctl autostart status
 ```
 
 Пользовательский LaunchAgent запускает Happ, пытается подключить последний
-сервис через `scutil` и следит за `list-general.txt`, `list-google.txt` и
-`list-general-user.txt`. При изменении любого из них профиль Happ переимпортируется.
+сервис через `scutil` и следит за `list-general.txt`, `list-google.txt`,
+`list-general-user.txt`, `list-exclude.txt`, `list-exclude-user.txt` и
+`list-vk.txt`. При изменении любого из них профиль Happ переимпортируется.
 
 Запуск VPN из root-daemon намеренно не выполняется: Happ — пользовательская
 Network Extension, и macOS не даёт безопасного универсального способа управлять
