@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — macOS packet transport and universal split routing
+## 0.2.0 — macOS packet transport and Happ split routing
 
 - native PFLOG/BPF packet datapath for macOS;
 - `cloud-gaming` strategy combining Discord, YouTube and game traffic;
@@ -8,7 +8,8 @@
 - VPN detection based on tunnel default routes, not a hard-coded `utun8`;
 - Happ deep-link routing adapter;
 - Happ-only split-routing adapter with active-client checks;
-- launchd installation with `--allow-vpn` and `--no-exempt-root`;
+- launchd installation with `--allow-vpn` and root-exempt VPN transport;
+- PFLOG interception restricted to the physical uplink, leaving VPN-routed traffic in `utun`;
 - PF/BPF live integration coverage, diagnostics and recovery documentation.
 
 The router intentionally supports Happ only. Other VPN clients are not modified

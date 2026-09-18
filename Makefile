@@ -81,7 +81,7 @@ install: build
 		sleep 1; \
 	done; exit 1
 	@echo "==> installed with pflog/BPF, active-VPN support and cloud-gaming default"
-	@echo "==> split routing: zaprctl router auto --install, then reconnect the VPN"
+	@echo "==> split routing: zaprctl router happ --install, accept it in Happ, then reconnect the VPN"
 	@echo "==> verify: zaprctl test --suite discord"
 
 uninstall:

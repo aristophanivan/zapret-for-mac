@@ -88,6 +88,8 @@ the state directory and boots out an older copy of the job):
 sudo /usr/local/libexec/zapretd install-daemon \
   --plist  /Library/LaunchDaemons/io.zapretmac.zapretd.plist \
   --data   "/Library/Application Support/zapret-mac" \
+  --transport divert \
+  --allow-vpn \
   --stdout /var/log/zapret-mac.log \
   --stderr /var/log/zapret-mac.err.log \
   --log    /var/log/zapret-mac.log

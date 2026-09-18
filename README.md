@@ -31,7 +31,7 @@ All 21 upstream strategies are here, converted automatically from the original `
 brew tap naladwepo/zapret
 brew install --cask zapret-for-mac
 
-sudo /opt/homebrew/libexec/zapretd install-daemon \
+sudo /usr/local/libexec/zapretd install-daemon \
   --plist /Library/LaunchDaemons/io.zapretmac.zapretd.plist \
   --data /opt/homebrew/var/zapret-mac \
   --transport divert
@@ -53,8 +53,9 @@ make build
 # Install the daemon, pflog/BPF transport, lists and cloud-gaming strategy
 make install
 
-# Turn off a full-tunnel VPN, then verify Discord without opening the app
-sudo zaprctl vpn stop
+# Import the Happ split-routing profile, accept it, and reconnect Happ
+zaprctl router happ --install
+sudo zaprctl start
 zaprctl test --suite discord
 ```
 
@@ -109,7 +110,7 @@ So the interception core had to be rebuilt on primitives macOS does have.
 
 ```
                     ┌──────────────────────────────────────────────┐
-   application  ──► │ pf: block out log (all, to pflogN)           │ ──► /dev/bpfN
+   application  ──► │ pf: block out log ... quick on en0           │ ──► /dev/bpfN
                     └──────────────────────────────────────────────┘      (DLT_PFLOG;
                                                                            original dropped)
                                           │
@@ -188,6 +189,7 @@ zaprctl test --suite discord    # API, WSS, CDN, updater and UDP/STUN
 zaprctl doctor [--repair]       # diagnostics; fixes what is safely ours
 sudo zaprctl vpn stop|start     # the VPN that blocks the packet datapath
 zaprctl router happ --install   # проверка Happ + импорт split-routing профиля
+zaprctl autostart install      # запуск Happ и watcher списков при входе в систему
 sudo zaprctl probe               # capability probe, встроенный в этот CLI
 sudo zaprctl hosts apply        # /etc/hosts pinning for Discord voice
 sudo zaprctl ipset any          # upstream's tri-state ipset switch
@@ -204,12 +206,12 @@ One command always restores normal networking. It resolves the effective
 `com.apple/zapret-mac` sub-anchor (or the pf.conf fallback) and empties it:
 
 ```bash
-sudo /opt/homebrew/libexec/zapretd guard --verbose
+sudo /usr/local/libexec/zapretd guard --verbose
 ```
 
 A `launchd` guard does this automatically every 5 seconds whenever no daemon owns the anchor, so a `kill -9` cannot leave pf dropping your traffic.
 
-> Одна команда всегда возвращает сеть в норму и сама находит фактический PF-анкор: `sudo /opt/homebrew/libexec/zapretd guard --verbose`. Раз в 5 секунд то же делает launchd-страж, если анкором никто не владеет.
+> Одна команда всегда возвращает сеть в норму и сама находит фактический PF-анкор: `sudo /usr/local/libexec/zapretd guard --verbose`. Раз в 5 секунд то же делает launchd-страж, если анкором никто не владеет.
 
 Full uninstall: `make uninstall` — removes the binaries, both launchd jobs and the `/etc/hosts` block if it was applied.
 

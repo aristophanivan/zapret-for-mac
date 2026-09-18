@@ -6,7 +6,7 @@
 ```text
 приложение
     ↓
-PF: block out log (all, to pflogN)
+PF: block out log (all, to pflogN) quick on en0
     ├── оригинал заблокирован
     └── копия → pflogN → strategy engine → BPF → физический интерфейс
 ```
@@ -18,7 +18,9 @@ VPN, удалённый сервер, NetworkExtension, kext и отключен
 
 ```bash
 make install
-sudo zaprctl vpn stop
+zaprctl router happ --install
+# принять профиль в Happ и переподключить Happ
+sudo zaprctl start
 zaprctl status
 zaprctl test --suite discord
 ```
@@ -34,9 +36,13 @@ zaprctl test --suite discord
 zaprctl router happ --install
 ```
 
-Он отправляет российские geosite/geoip и домены, перечисленные в hostlists
-zapret, напрямую. Остальной трафик остаётся в VPN. После импорта профиля Happ
-нужно один раз переподключить VPN.
+Он отправляет российские geosite/geoip и все домены, перечисленные в hostlists
+zapret, напрямую через физический интерфейс. Остальной трафик остаётся в VPN.
+После импорта профиля Happ нужно принять профиль и переподключить VPN.
+
+Правила PF ограничены физическим uplink (`on en0`), поэтому трафик, уже
+маршрутизированный Happ в `utun`, не попадает в zapret. Root-owned пакеты VPN
+также исключены правилом `user { > root }`, чтобы не блокировать сам туннель.
 
 Роутер намеренно поддерживает только Happ: у других VPN-клиентов нет общего
 API для импорта split-routing-профиля. `router happ` проверяет, что Happ
@@ -68,12 +74,35 @@ zaprctl autopick --suite discord --no-early-stop --rounds 3
 ## Аварийное восстановление
 
 ```bash
-sudo /opt/homebrew/libexec/zapretd guard --verbose
+sudo /usr/local/libexec/zapretd guard --verbose
 ```
 
 Команда сама определяет, используется ли `com.apple/zapret-mac` или fallback
 anchor из `/etc/pf.conf`, и очищает только правила zapret-mac. Установленный
 launchd guard выполняет ту же проверку автоматически.
+
+Если после запуска пропал весь интернет, сначала останови datapath:
+
+```bash
+sudo zaprctl stop
+```
+
+Проверь, что в правилах нет старого standalone-anchor:
+
+```bash
+sudo pfctl -a zapret-probe -sr
+sudo pfctl -a zapret-probe -F all
+```
+
+После обновления проверь активный anchor:
+
+```bash
+sudo pfctl -a com.apple/zapret-mac -sr
+```
+
+В правилах должны быть одновременно `quick on en0` и `user { > root }`.
+Отсутствие `on en0` означает старую сборку, которая могла перехватывать VPN,
+а отсутствие `user { > root }` — сборку с ошибочным `--no-exempt-root`.
 
 ## Проверка transport разработчиком
 
