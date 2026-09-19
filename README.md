@@ -197,6 +197,10 @@ sudo zaprctl ipset any          # upstream's tri-state ipset switch
 zaprctl logs -f
 ```
 
+Run `test` and `autopick` **without `sudo`**. The default PF rules exempt root
+traffic, so root-owned probes bypass zapret and can give a false failure or
+select the wrong strategy. The control socket grants access to the `admin` group.
+
 > Те же команды по-русски: `status` — транспорт, стратегия, счётчики, состояние pf и предупреждения; `list` — стратегии и что из них не потянет активный транспорт; `explain` — скомпилированные профили с реальными параметрами (замена чтению `.bat`); `use` — сменить стратегию; `autopick` — перебрать все и оставить рабочую; `test` — проверка связности через датапас; `doctor` — диагностика и починка своего мусора; `vpn stop/start` — корректно остановить и вернуть VPN; `hosts apply` — пины IP для Discord voice; `ipset` — tri-state переключатель из upstream; `logs` — журнал демона.
 
 ---

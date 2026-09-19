@@ -2162,6 +2162,9 @@ func (c *cli) cmdTest(ctx context.Context, args []string) int {
 	if code != parseContinue {
 		return code
 	}
+	if os.Geteuid() == 0 {
+		return c.fail(errors.New("test must run without sudo: the default pf rules exempt root traffic, so a root probe bypasses zapret; run `zaprctl test` as your user (the control socket grants access to the admin group)"))
+	}
 	// The probes MUST run in this process, not in the daemon.
 	//
 	// The steering ruleset carries `user { > root }` so root-owned traffic is
@@ -2737,7 +2740,7 @@ func (c *cli) cmdRouter(ctx context.Context, args []string) int {
 	if client != "happ" {
 		return c.fail(fmt.Errorf("router: client %q is not supported; this router is available only for Happ (use `zaprctl router happ`)", rest[0]))
 	}
-	if !happInUse() && install {
+	if !happConnected() && install {
 		return c.fail(errors.New("router happ: Happ is not connected; connect the Happ profile first, then retry (or omit --install to only print/save the profile)"))
 	}
 
@@ -2885,18 +2888,26 @@ func startLastHappService(ctx context.Context) {
 		return
 	}
 	for _, line := range strings.Split(string(b), "\n") {
-		if !strings.Contains(strings.ToLower(line), "happ") {
+		if !strings.Contains(line, "su.ffg.happ") {
 			continue
 		}
-		name := strings.TrimSpace(strings.TrimLeft(line, "*+- "))
-		if i := strings.Index(name, ")"); i >= 0 {
-			name = strings.TrimSpace(name[i+1:])
-		}
+		name := happServiceName(line)
 		if name != "" {
 			_, _ = exec.CommandContext(ctx, "/usr/sbin/scutil", "--nc", "start", name).CombinedOutput()
 		}
 		return
 	}
+}
+
+func happServiceName(line string) string {
+	if !strings.Contains(line, "su.ffg.happ") {
+		return ""
+	}
+	parts := strings.SplitN(line, "\"", 3)
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[1]
 }
 
 // cmdProbe is the single user-facing entry point for the reversible machine
@@ -2911,30 +2922,35 @@ func (c *cli) cmdProbe(args []string) int {
 	return exitOK // runEmbeddedProbe exits after emitting its report
 }
 
-// happConnected covers Happ's NetworkConnection service, which may not expose
-// a user-space process or launchd label while its NetworkExtension owns utun.
+// happConnected checks the service state and the actual Network Extension.
+// scutil can report (Disconnected) while Happ's Tunnel.appex still owns a
+// default route, so neither the service listing nor a utun alone is enough.
 func happConnected() bool {
 	b, err := exec.Command("/usr/sbin/scutil", "--nc", "list").Output()
-	if err != nil {
-		return false
-	}
-	s := string(b)
-	return strings.Contains(s, "su.ffg.happ") || strings.Contains(strings.ToLower(s), "happ")
-}
-
-// happInUse combines the NetworkConnection view with process/launchd detection.
-// Happ's Network Extension can own utun without exposing a normal GUI process,
-// while a freshly opened GUI may not have registered its service yet.
-func happInUse() bool {
-	if happConnected() {
+	if err == nil && happServiceConnected(string(b)) {
 		return true
 	}
 	rep, err := vpn.Detect(localTunnelDefaults)
-	if err != nil {
+	if err != nil || len(rep.TunnelDefaults) == 0 {
 		return false
 	}
 	for _, f := range rep.Findings {
-		if strings.EqualFold(f.Provider, "Happ") && (len(f.Processes) > 0 || len(f.Jobs) > 0) {
+		if f.Provider != "Happ" {
+			continue
+		}
+		for _, p := range f.Processes {
+			if strings.Contains(p.Path, "/Happ.app/Contents/PlugIns/Tunnel.appex/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func happServiceConnected(list string) bool {
+	for _, line := range strings.Split(list, "\n") {
+		if strings.Contains(line, "su.ffg.happ") &&
+			(strings.Contains(line, "(Connected)") || strings.Contains(line, "(Connecting)")) {
 			return true
 		}
 	}
@@ -3041,6 +3057,9 @@ func (c *cli) cmdAutopick(ctx context.Context, args []string) int {
 		})
 	if code != parseContinue {
 		return code
+	}
+	if os.Geteuid() == 0 && !dryRun {
+		return c.fail(errors.New("autopick must run without sudo: the default pf rules exempt root traffic, so root probes cannot rank zapret strategies; run `zaprctl autopick` as your user (the control socket grants access to the admin group)"))
 	}
 	if code := c.noArgs("autopick", rest); code != parseContinue {
 		return code
