@@ -59,6 +59,13 @@ func createPFLog() (*pflogHandle, error) {
 
 func (p *pflogHandle) Name() string { return p.name }
 
+func (p *pflogHandle) Stats() (recv, drop uint32, err error) {
+	if p == nil || p.h == nil {
+		return 0, 0, unix.EBADF
+	}
+	return p.h.stats()
+}
+
 // Read returns one IP packet from a batch of BPF records. The pflog header's
 // first byte is its own length; the IP packet starts immediately after it.
 func (p *pflogHandle) Read(buf []byte, timeout time.Duration) (ver uint8, pkt []byte, ok bool, err error) {

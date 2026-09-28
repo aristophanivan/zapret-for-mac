@@ -786,6 +786,7 @@ func TestStatsShape(t *testing.T) {
 	tr.st.pktsOut.Store(7)
 	tr.st.pktsInject.Store(21)
 	tr.st.pktsDropped.Store(3)
+	tr.st.plogDrop.Store(4)
 	tr.st.tapDrop.Store(5)
 	tr.st.utunDrop.Store(2)
 	tr.st.errs.Store(1)
@@ -797,8 +798,8 @@ func TestStatsShape(t *testing.T) {
 	if s.PktsIn != 10 || s.PktsOut != 7 || s.PktsInject != 21 || s.PktsDropped != 3 {
 		t.Errorf("packet counters did not survive: %+v", s)
 	}
-	if s.QueueDrop != 7 {
-		t.Errorf("QueueDrop = %d, want the sum of the tap (5) and utun (2) drops", s.QueueDrop)
+	if s.QueueDrop != 11 {
+		t.Errorf("QueueDrop = %d, want pflog (4) + tap (5) + read (2) drops", s.QueueDrop)
 	}
 	if s.Errors != 1 {
 		t.Errorf("Errors = %d, want 1", s.Errors)

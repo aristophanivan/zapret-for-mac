@@ -27,6 +27,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -168,6 +170,69 @@ type Report struct {
 
 // Blocking reports whether anything currently holds a tunnel default route.
 func (r Report) Blocking() bool { return len(r.TunnelDefaults) > 0 }
+
+// HappTunnelEndpoints returns the remote addresses used by Happ's Network
+// Extension transport. They must be exempt from zapret's physical-uplink PF
+// rules: the encrypted outer socket leaves through enN too, and intercepting it
+// recursively stalls every site carried inside the VPN.
+func HappTunnelEndpoints(ctx context.Context, r Report) ([]netip.Addr, error) {
+	seen := make(map[netip.Addr]struct{})
+	var firstErr error
+	for _, f := range r.Findings {
+		if f.Provider != "Happ" {
+			continue
+		}
+		for _, p := range f.Processes {
+			if !strings.Contains(p.Path, "/Happ.app/Contents/PlugIns/Tunnel.appex/") {
+				continue
+			}
+			out, err := exec.CommandContext(ctx, "/usr/sbin/lsof", "-nP", "-a", "-p",
+				strconv.Itoa(p.PID), "-iTCP", "-iUDP", "-Fn").CombinedOutput()
+			if err != nil && len(out) == 0 {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("vpn: list Happ Tunnel sockets for pid %d: %w", p.PID, err)
+				}
+				continue
+			}
+			for _, a := range parseLsofRemoteAddrs(string(out)) {
+				seen[a] = struct{}{}
+			}
+		}
+	}
+	out := make([]netip.Addr, 0, len(seen))
+	for a := range seen {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Less(out[j]) })
+	return out, firstErr
+}
+
+func parseLsofRemoteAddrs(s string) []netip.Addr {
+	seen := make(map[netip.Addr]struct{})
+	for _, line := range strings.Split(s, "\n") {
+		if !strings.HasPrefix(line, "n") {
+			continue
+		}
+		_, remote, ok := strings.Cut(strings.TrimPrefix(line, "n"), "->")
+		if !ok {
+			continue // listener or unconnected UDP socket
+		}
+		host, _, err := net.SplitHostPort(remote)
+		if err != nil {
+			continue
+		}
+		a, err := netip.ParseAddr(strings.Trim(host, "[]"))
+		if err == nil {
+			seen[a.Unmap()] = struct{}{}
+		}
+	}
+	out := make([]netip.Addr, 0, len(seen))
+	for a := range seen {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Less(out[j]) })
+	return out
+}
 
 // TunnelLister returns the tunnel interfaces holding an IPv4 default route.
 // It is a parameter so the caller supplies netcfg's routing-table reader and

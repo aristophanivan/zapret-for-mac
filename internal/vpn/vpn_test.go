@@ -1,10 +1,22 @@
 package vpn
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
+
+func TestParseLsofRemoteAddrs(t *testing.T) {
+	in := "p4958\nf7\nn127.0.0.1:10808\nf11\nn172.20.10.3:62200->31.76.39.24:4243\n" +
+		"f12\nn[fe80::1]:60000->[2001:db8::24]:443\nf13\nn172.20.10.3:1->31.76.39.24:4243\n"
+	got := parseLsofRemoteAddrs(in)
+	want := []netip.Addr{netip.MustParseAddr("31.76.39.24"), netip.MustParseAddr("2001:db8::24")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseLsofRemoteAddrs = %v, want %v", got, want)
+	}
+}
 
 // TestMatchesProcIsExact guards the rule that decides what may be signalled.
 // A prefix match here would mean killing a process merely because its name

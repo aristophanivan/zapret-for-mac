@@ -179,6 +179,10 @@ The CLI never hides this: `zaprctl list` marks, per strategy, exactly which ops 
 
 > **Discord voice (UDP 19294–19344, 50000–50100):** механика воспроизведена только в `divert` — фейковые датаграммы инжектируются с заданным TTL **с настоящего исходного порта клиента** перед 74-байтным пакетом IP Discovery, ровно как это делает winws. Пробьёт ли это конкретный ТСПУ — вопрос эмпирический, локальным тестом не проверяется. В `proxy` голос не работает никак.
 
+With automatic interface selection the daemon follows physical default-route changes and rebuilds the PF/BPF datapath on any active `enN` (including USB tethering). Discord/STUN fakes are limited to the recognised handshake; subsequent voice media uses the clean fast path.
+
+> При автоматическом выборе интерфейса демон сам переезжает на любой активный `enN`, включая USB-раздачу. Discord/STUN-фейки применяются к распознанному handshake, а последующий голосовой трафик идёт по чистому fast path.
+
 ---
 
 ## Commands / Команды

@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -81,13 +82,16 @@ type warner interface{ Warnings() []string }
 // holds no pf reference of its own: two components taking `pfctl -E` tokens
 // against the same state directory would release each other's.
 func (d *Daemon) divertOptions() divert.Options {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	excludes := d.runtimeExcludePrefixes(ctx)
+	cancel()
 	return divert.Options{
 		Anchor:          d.opts.anchor,
 		StateDir:        d.dirs.state,
 		PfConfPath:      d.opts.pfConfPath,
 		PF:              d.pf,
 		ExcludeTable:    divert.DefaultExcludeTable,
-		ExcludePrefixes: d.excludePrefixes(),
+		ExcludePrefixes: excludes,
 		// TargetTable stays empty on purpose: the steered set is the strategy's
 		// PORT window, exactly as in winws. Restricting it to the ipset would
 		// hide every hostlist-matched flow from the engine.
@@ -268,6 +272,16 @@ func dirHasFiles(dir string) bool {
 // silently drops our anchor, and the user's only symptom is that the bypass
 // stopped working.
 const pfVerifyInterval = 30 * time.Second
+
+// uplinkVerifyInterval is deliberately short: macOS can move the default route
+// from Wi-Fi to USB tethering without killing either interface. PF rules and the
+// BPF injector are bound to the uplink selected at session start, so leaving the
+// old session alive black-holes every intercepted packet until a manual restart.
+const uplinkVerifyInterval = 2 * time.Second
+
+// vpnExcludeInterval follows Happ server/profile changes without restarting the
+// datapath. lsof and pfctl are deliberately not run on every uplink tick.
+const vpnExcludeInterval = 5 * time.Second
 
 // pfRepairCooldown keeps a permanent drift (someone actively fighting us over
 // /etc/pf.conf) from turning into a repair loop.
@@ -482,6 +496,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 		defer close(watchDone)
 		d.watchPF(ctx)
 	}()
+	uplinkDone := make(chan struct{})
+	go func() {
+		defer close(uplinkDone)
+		d.watchUplink(ctx)
+	}()
+	vpnExcludeDone := make(chan struct{})
+	go func() {
+		defer close(vpnExcludeDone)
+		d.watchVPNExcludes(ctx)
+	}()
 
 	<-ctx.Done()
 	d.log.Printf("shutting down")
@@ -492,9 +516,147 @@ func (d *Daemon) Run(ctx context.Context) error {
 	<-srvDone
 	<-superDone
 	<-watchDone
+	<-uplinkDone
+	<-vpnExcludeDone
 	d.cleanup()
 	d.log.Printf("stopped")
 	return nil
+}
+
+// uplinkReporter is implemented by packet transports that bind themselves to
+// one physical interface. Keeping it optional leaves the socket proxy and test
+// transports untouched.
+type uplinkReporter interface{ Uplink() netcfg.Route }
+
+type excludeUpdater interface{ UpdateExcludePrefixes([]netip.Prefix) error }
+
+func sameUplink(a, b netcfg.Route) bool {
+	return a.Iface == b.Iface && a.IfIndex == b.IfIndex && a.Local == b.Local &&
+		a.Gateway == b.Gateway && bytes.Equal(a.MAC, b.MAC) &&
+		bytes.Equal(a.GatewayMAC, b.GatewayMAC) && a.MTU == b.MTU
+}
+
+func replacementUplink(old netcfg.Route, routes []netcfg.Route) (netcfg.Route, bool) {
+	for _, r := range routes {
+		if r.Iface == old.Iface && sameUplink(old, r) {
+			return netcfg.Route{}, false
+		}
+	}
+	if len(routes) == 0 || routes[0].IsTunnel {
+		return netcfg.Route{}, false
+	}
+	return routes[0], true
+}
+
+// watchUplink follows macOS network handovers (en0 Wi-Fi, enN USB tethering or
+// Ethernet). An explicit --iface remains pinned by definition; autodetection is
+// the mode that follows the preferred physical default route.
+func (d *Daemon) watchUplink(ctx context.Context) {
+	if d.opts.iface != "" {
+		return
+	}
+	t := time.NewTicker(uplinkVerifyInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !d.isEnabled() || !d.isRunning() {
+			continue
+		}
+		d.mu.Lock()
+		tr := d.tr
+		d.mu.Unlock()
+		u, ok := tr.(uplinkReporter)
+		if !ok {
+			continue
+		}
+		old := u.Uplink()
+		if old.Iface == "" {
+			continue
+		}
+
+		// Keep a healthy physical uplink sticky. macOS may temporarily advertise
+		// two live defaults for iPhone USB/Wi-Fi and shuffle their scope flags;
+		// moving merely because another enN sorts first sends BPF frames down the
+		// wrong link. Restart only when the route bound to this session vanished
+		// or materially changed.
+		routes, err := netcfg.DefaultRoutes4()
+		if err != nil {
+			continue
+		}
+		next, changed := replacementUplink(old, routes)
+		if !changed {
+			continue
+		}
+		d.log.Printf("physical uplink changed: %s (%s via %s) -> %s (%s via %s); restarting datapath",
+			old.Iface, old.Local, old.Gateway, next.Iface, next.Local, next.Gateway)
+		d.cancelSession()
+		d.kick()
+	}
+}
+
+func (d *Daemon) runtimeExcludePrefixes(ctx context.Context) []netip.Prefix {
+	out := d.excludePrefixes()
+	rep, err := vpn.Detect(tunnelDefaults)
+	if err != nil {
+		d.log.Debugf("detect Happ endpoints: %v", err)
+		return out
+	}
+	eps, err := vpn.HappTunnelEndpoints(ctx, rep)
+	if err != nil {
+		d.log.Debugf("detect Happ endpoints: %v", err)
+	}
+	for _, a := range eps {
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out
+}
+
+func prefixSignature(ps []netip.Prefix) string {
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		parts = append(parts, p.Masked().String())
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\n")
+}
+
+func (d *Daemon) watchVPNExcludes(ctx context.Context) {
+	t := time.NewTicker(vpnExcludeInterval)
+	defer t.Stop()
+	last := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !d.isEnabled() || !d.isRunning() {
+			continue
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		prefixes := d.runtimeExcludePrefixes(probeCtx)
+		cancel()
+		sig := prefixSignature(prefixes)
+		if sig == last {
+			continue
+		}
+		d.mu.Lock()
+		tr := d.tr
+		d.mu.Unlock()
+		up, ok := tr.(excludeUpdater)
+		if !ok {
+			continue
+		}
+		if err := up.UpdateExcludePrefixes(prefixes); err != nil {
+			d.log.Printf("cannot update Happ VPN endpoint exclusions: %v", err)
+			continue
+		}
+		last = sig
+	}
 }
 
 // banner logs the one screen an operator needs to trust what is running.

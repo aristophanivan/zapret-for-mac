@@ -107,6 +107,11 @@ type Interface struct {
 // Up reports whether IFF_UP is set.
 func (i Interface) Up() bool { return i.Flags&unix.IFF_UP != 0 }
 
+// Running reports whether the link is operational. macOS may retain an UP
+// scoped default route for a disconnected Wi-Fi/USB service; IFF_RUNNING is
+// what keeps that stale route from winning physical-uplink selection.
+func (i Interface) Running() bool { return i.Flags&unix.IFF_RUNNING != 0 }
+
 // DefaultRoute returns the interface, gateway, local address and interface MAC
 // of the IPv4 default route the divert transport should attach to.
 //
@@ -138,8 +143,14 @@ func DefaultRoute4() (Route, error) {
 }
 
 // DefaultRoutes4 returns every usable IPv4 default route (destination
-// 0.0.0.0/0), non-tunnel first and then by ifindex, so the result is
-// deterministic across calls.
+// 0.0.0.0/0) on operational interfaces, non-tunnel first and then by ifindex.
+//
+// Do not rank physical defaults by RTF_IFSCOPE. During iPhone USB/Wi-Fi
+// coexistence macOS can move that flag between two live enN routes for short
+// periods. Treating it as an uplink preference made the BPF injector flap
+// between interfaces and black-hole connections. The daemon keeps its current
+// operational uplink sticky and consults this order only when that link goes
+// away.
 func DefaultRoutes4() ([]Route, error) {
 	ifaces, err := interfaceTable()
 	if err != nil {
@@ -183,15 +194,21 @@ func DefaultRoutes4() ([]Route, error) {
 			}
 		}
 		fillRouteIface(&r, ifaces)
+		inf := ifaces[r.IfIndex]
+		if inf == nil || !inf.Up() || !inf.Running() {
+			return
+		}
 		out = append(out, r)
 	})
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].IsTunnel != out[j].IsTunnel {
-			return !out[i].IsTunnel
-		}
-		return out[i].IfIndex < out[j].IfIndex
-	})
+	sort.SliceStable(out, func(i, j int) bool { return preferredDefault(out[i], out[j]) })
 	return out, nil
+}
+
+func preferredDefault(a, b Route) bool {
+	if a.IsTunnel != b.IsTunnel {
+		return !a.IsTunnel
+	}
+	return a.IfIndex < b.IfIndex
 }
 
 // RouteForIface returns the first usable IPv4 gateway route on the named

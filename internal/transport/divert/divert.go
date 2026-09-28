@@ -144,9 +144,10 @@ type counters struct {
 	bytesIn     atomic.Int64
 	bytesOut    atomic.Int64
 	errs        atomic.Int64
-	// tapDrop is the tap's absolute BIOCGSTATS drop count (a Store, because the
-	// kernel counter is itself cumulative); utunDrop counts our own ENOBUFS
-	// reads. Stats reports the sum, which is why they cannot share a field.
+	// plogDrop/tapDrop are the BPF descriptors' absolute BIOCGSTATS drop counts
+	// (Store, because the kernel counters are cumulative); utunDrop counts our
+	// own ENOBUFS reads. Stats reports the sum, so they cannot share a field.
+	plogDrop atomic.Int64
 	tapDrop  atomic.Int64
 	utunDrop atomic.Int64
 	// csumFixed counts intercepted packets whose checksums had to be repaired
@@ -793,6 +794,8 @@ func (t *Transport) run(ctx context.Context) error {
 	// header; the slack absorbs a larger MTU set behind our back.
 	buf := make([]byte, pflogBufLen)
 	lastGC := time.Now()
+	lastStats := time.Now()
+	var reportedPlogDrop uint32
 	consecutiveErrs := 0
 
 	for {
@@ -832,6 +835,17 @@ func (t *Transport) run(ctx context.Context) error {
 			t.eng.GC()
 			if err := t.eng.FlushAutoLists(); err != nil {
 				t.opts.Logf("divert: persisting a self-learning hostlist failed: %v", err)
+			}
+		}
+		if time.Since(lastStats) >= time.Second {
+			lastStats = time.Now()
+			if _, drop, serr := plog.Stats(); serr == nil {
+				t.st.plogDrop.Store(int64(drop))
+				if drop > reportedPlogDrop {
+					t.opts.Logf("divert: interception queue dropped %d packet(s), %d total; blocked originals cannot be recovered and real-time traffic may stall",
+						drop-reportedPlogDrop, drop)
+					reportedPlogDrop = drop
+				}
 			}
 		}
 		if !ok {
@@ -1034,6 +1048,25 @@ func (t *Transport) Reload(s *strategy.Strategy) error {
 	return nil
 }
 
+// UpdateExcludePrefixes atomically replaces the live PF exclusion table. It is
+// used for VPN outer endpoints, which can change without a zapret strategy or
+// port-window change when the user switches servers in Happ.
+func (t *Transport) UpdateExcludePrefixes(prefixes []netip.Prefix) error {
+	prefixes = append([]netip.Prefix(nil), prefixes...)
+	t.mu.Lock()
+	t.opts.ExcludePrefixes = prefixes
+	pf, name := t.pf, t.opts.ExcludeTable
+	t.mu.Unlock()
+	if pf == nil || name == "" {
+		return nil
+	}
+	if err := pf.TableReplace(name, prefixes); err != nil {
+		return fmt.Errorf("divert: update pf exclusion table <%s>: %w", name, err)
+	}
+	t.opts.Logf("divert: pf exclusion table <%s> updated (%d prefix(es))", name, len(prefixes))
+	return nil
+}
+
 // Stats implements transport.Transport.
 func (t *Transport) Stats() transport.Stats {
 	t.mu.Lock()
@@ -1057,7 +1090,7 @@ func (t *Transport) Stats() transport.Stats {
 		Desyncs:     c.Desyncs,
 		Matched:     c.Matched,
 		Errors:      t.st.errs.Load() + c.Errors,
-		QueueDrop:   t.st.tapDrop.Load() + t.st.utunDrop.Load(),
+		QueueDrop:   t.st.plogDrop.Load() + t.st.tapDrop.Load() + t.st.utunDrop.Load(),
 	}
 }
 

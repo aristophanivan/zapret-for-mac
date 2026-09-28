@@ -494,6 +494,14 @@ func (e *Engine) OnUDP(p *proto.Pkt) (*desync.Plan, error) {
 	}
 	if info.Proto != proto.L7Unknown {
 		f.L7 = info.Proto
+	} else if f.Matched && f.ProfileIdx >= 0 && f.L7&(proto.L7Discord|proto.L7STUN) != 0 {
+		// Discord voice and STUN are handshake classifiers. Once their recognised
+		// packet has selected a profile, the following opaque RTP/RTCP media must
+		// pass untouched. Keeping the cached profile active used to prepend six
+		// 1200-byte fakes to every voice datagram forever, eventually congesting
+		// the uplink and presenting in Discord as a 5000 ms ping.
+		f.FastPath = true
+		return nil, nil
 	}
 
 	prof := e.selectProfile(strat, fe, p)

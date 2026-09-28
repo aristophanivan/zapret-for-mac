@@ -617,6 +617,32 @@ func TestCloudGamingStrategyExcludedVKPlay(t *testing.T) {
 	}
 }
 
+// TestCloudGamingStrategyDiscordWebEndpoints guards the two endpoints whose
+// failures are easiest to mistake for missing Happ/zapret routing rules. Their
+// parent domains in list-general.txt must suffix-match both names and select
+// the ordinary TLS profile on port 443.
+func TestCloudGamingStrategyDiscordWebEndpoints(t *testing.T) {
+	s := loadShipped(t, "cloud-gaming.toml")
+	cli := mustAddr(t, "192.0.2.10")
+	srv := mustAddr(t, "162.159.130.234")
+
+	for i, host := range []string{"gateway.discord.gg", "media.discordapp.net"} {
+		e := New(s, desync.FullCaps(), desync.FakeSet{})
+		p := mkPkt(t, pktSpec{src: cli, dst: srv, sport: uint16(41300 + i), dport: 443, seq: 1001, ack: 7, payload: tlsHello(host)})
+		plan, err := e.OnTCP(p)
+		if err != nil {
+			t.Fatalf("OnTCP(%s): %v", host, err)
+		}
+		f := flowState(t, e, keyOf(p))
+		if f.ProfileIdx < 0 || s.Profiles[f.ProfileIdx].Name != "p5-tcp-80_443" {
+			t.Fatalf("%s selected profile %d, want p5-tcp-80_443", host, f.ProfileIdx)
+		}
+		if !hasSegs(plan) || !plan.DropOriginal || !f.Desynced {
+			t.Fatalf("%s plan/flow = (%+v, %+v), want an applied TCP desync", host, plan, f)
+		}
+	}
+}
+
 // TestGeneralStrategyQUIC pins the UDP/443 QUIC profile: a real QUIC Initial is
 // classified, its SNI decrypted, and the profile's six fake QUIC datagrams are
 // planned in front of the original one.
@@ -680,6 +706,17 @@ func TestGeneralStrategyDiscordVoice(t *testing.T) {
 	}
 	if !bytes.Equal(plan.Dgrams[0].Data, readBlob(t, "ACTIVE_DISCORD_UDP.bin")) {
 		t.Fatal("the fake datagram is not ACTIVE_DISCORD_UDP.bin")
+	}
+
+	// Media on the same 4-tuple is opaque, but the flow remembers L7Discord.
+	// It must not inherit the handshake plan: six 1200-byte fakes per voice
+	// packet would congest the user's uplink within a long call.
+	media := mkPkt(t, pktSpec{src: cli, dst: srv, sport: 41400, dport: 50001, udp: true, payload: []byte{0x80, 0x78, 1, 2, 3, 4}})
+	if got, err := e.OnUDP(media); err != nil || got != nil {
+		t.Fatalf("voice media OnUDP = (%v, %v), want clean fast-path forwarding", got, err)
+	}
+	if f := flowState(t, e, keyOf(p)); !f.FastPath {
+		t.Fatal("voice flow did not enter the fast path after its handshake")
 	}
 }
 

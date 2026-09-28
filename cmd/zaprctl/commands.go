@@ -3214,16 +3214,29 @@ func (c *cli) selftestLocal(ctx context.Context, targets []string, strat, suite 
 		probes = custom
 	}
 
-	results, err := diag.Run(ctx, probes, diag.RunOpts{})
-	if err != nil {
-		return out, err
+	// Run one target at a time so the daemon's monotone desync counter can be
+	// attributed to the connection we just opened. The old concurrent runner
+	// never populated TestTarget.Desynced at all, so every row misleadingly
+	// printed "-" even while the datapath was firing.
+	results := make([]diag.Result, 0, len(probes))
+	desyncCount := func() (int64, bool) {
+		st, err := cl.Status(ctx)
+		if err != nil || !st.Running {
+			return 0, false
+		}
+		return st.Stats.Desyncs, true
 	}
 	blocked := 0
 	failed := 0
-	for _, r := range results {
+	for _, p := range probes {
+		before, haveBefore := desyncCount()
+		r := diag.RunProbe(ctx, p, diag.RunOpts{})
+		after, haveAfter := desyncCount()
+		results = append(results, r)
 		tt := ctl.TestTarget{
 			Target: r.Name, OK: r.OK, MS: r.FirstByteTime.Milliseconds(),
 			SNI: r.SNI, Detail: probeDetail(r),
+			Desynced: haveBefore && haveAfter && after > before,
 		}
 		out.Targets = append(out.Targets, tt)
 		if !r.OK {
